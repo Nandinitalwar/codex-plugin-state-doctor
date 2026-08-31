@@ -1,6 +1,6 @@
 import { runInstallBenchmark, renderInstallBenchmark } from "./benchmark.js";
 
-export const BENCHMARK_HELP = `Usage: codex-plugin-doctor benchmark-install PLUGIN@MARKETPLACE [options]
+export const BENCHMARK_HELP = `Usage: pdoctor benchmark-install PLUGIN@MARKETPLACE [options]
 
 Measure cold plugin installation latency in fresh temporary Codex homes.
 
@@ -65,7 +65,7 @@ export async function runBenchmarkCli(argv, io = console, dependencies = {}) {
   try {
     options = parseBenchmarkArgs(argv);
   } catch (error) {
-    io.error(`codex-plugin-doctor: ${error.message}`);
+    io.error(`pdoctor: ${error.message}`);
     return 2;
   }
   if (options.help) {
@@ -77,7 +77,7 @@ export async function runBenchmarkCli(argv, io = console, dependencies = {}) {
   try {
     report = runInstallBenchmark(options, dependencies);
   } catch (error) {
-    io.error(`codex-plugin-doctor: ${error.message}`);
+    io.error(`pdoctor: ${error.message}`);
     return 2;
   }
   io.log(options.json

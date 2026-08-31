@@ -1,4 +1,4 @@
-# Codex Plugin State Doctor
+# pdoctor
 
 ## Why this exists
 
@@ -7,7 +7,8 @@ that its cached files, manifest, skills, or dependencies are usable. That leaves
 developers debugging an ambiguous state: Codex knows about the plugin, but the
 plugin may still be unavailable to the agent.
 
-Plugin Doctor finds the first broken transition in that chain:
+pdoctor finds the first broken transition in that chain, including cases where
+an updated cache is healthy but a long-running session still holds old paths:
 
 ```text
 marketplace known
@@ -45,8 +46,9 @@ coverage, and proposed next checks.
 
 ## What it does
 
-- `doctor` reconciles Codex's plugin inventory with cached payloads, manifests,
-  skills, dependency files, and local sources.
+- `pdoctor` reconciles Codex's plugin inventory with marketplaces, source and
+  cached payloads, manifests, skills, dependency files, cache pointers, and
+  paths injected into recent sessions.
 - `benchmark-install` performs repeatable cold installs in isolated Codex homes
   and measures marketplace setup, installation, verification, and time-to-ready.
 
@@ -58,8 +60,12 @@ coverage, and proposed next checks.
 | `plugins.skills` | Skill roots stay inside the payload and contain valid `SKILL.md` frontmatter. |
 | `plugins.dependencies` | Referenced `.app.json` and `.mcp.json` files exist and parse correctly. |
 | `plugins.sources` | Local sources remain reachable for updates or reinstalls. |
+| `plugins.marketplaces` | Marketplace roots, source containment, and locally known Git revisions agree. |
+| `plugins.provenance` | Source and cache trees match, even when the version string did not change. |
+| `plugins.cache_pointers` | Existing `latest` pointers resolve to the installed version. |
+| `plugins.sessions` | Recently active sessions do not reference missing or superseded cache versions. |
 
-The doctor is read-only. It does not repair, install, remove, authenticate,
+pdoctor is read-only. It does not repair, install, remove, authenticate,
 create, package, or publish plugins. It also does not yet probe live MCP startup,
 OAuth readiness, or tool exposure in the active session. The benchmark installs
 only inside temporary Codex homes and never changes the user's Codex state.
@@ -74,19 +80,22 @@ cd codex-plugin-state-doctor
 npm install
 ```
 
-Run the doctor from the cloned repository. It is a standalone diagnostic CLI,
+Run pdoctor from the cloned repository. It is a standalone diagnostic CLI,
 not a plugin command inside Codex:
 
 ```sh
-npm run doctor
-npm run doctor -- --plugin gmail@openai-curated
-npm run doctor -- --json
+npm run pdoctor
+npm run pdoctor -- --plugin gmail@openai-curated
+npm run pdoctor -- --json
 ```
+
+By default, pdoctor inspects sessions updated within 24 hours. Change the window
+with `--session-hours N`, or use `--session-hours 0` to skip session scanning.
 
 Benchmark a cold installation:
 
 ```sh
-npm run doctor -- benchmark-install \
+npm run pdoctor -- benchmark-install \
   my-plugin@my-marketplace \
   --marketplace-source owner/repo \
   --runs 5
@@ -103,7 +112,7 @@ homes. Exit codes are `0` for no failures, `1` for failed integrity checks, and
 npm run test:all
 ```
 
-The suite contains 18 unit tests and two real-Codex end-to-end tests. Every test
+The suite contains 23 unit tests and two real-Codex end-to-end tests. Every test
 uses temporary fixtures and Codex homes; none reads or modifies the user's real
 configuration.
 

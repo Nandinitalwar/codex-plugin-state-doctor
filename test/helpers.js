@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 export function pluginEntry(overrides = {}) {
@@ -38,5 +38,13 @@ export function writeHealthyPayload(codexHome, plugin = pluginEntry(), manifest 
     path.join(payloadRoot, "skills", "health-check", "SKILL.md"),
     "---\nname: health-check\ndescription: Check fixture health.\n---\n\n# Health check\n",
   );
+  const sourcePath = plugin?.source?.path;
+  if (
+    plugin?.source?.source === "local" &&
+    typeof sourcePath === "string" &&
+    realpathSync(sourcePath) !== realpathSync(payloadRoot)
+  ) {
+    cpSync(payloadRoot, sourcePath, { recursive: true, force: true });
+  }
   return payloadRoot;
 }

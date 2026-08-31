@@ -20,7 +20,7 @@ marketplace known
 ```
 
 The common user-facing symptom is “installed and enabled, but unavailable.” A
-plugin doctor is useful because it can identify the first broken transition and
+pdoctor is useful because it can identify the first broken transition and
 recommend a specific next action. It cannot replace fixes to cache invalidation,
 session refresh, OAuth lifecycle, or MCP registration.
 
@@ -28,7 +28,7 @@ session refresh, OAuth lifecycle, or MCP registration.
 
 | Issue | Reported failure | Diagnostic opportunity |
 | --- | --- | --- |
-| [#34321: `plugin list` says installed/enabled while cache payload or skills are missing](https://github.com/openai/codex/issues/34321) | Config and inventory remain positive while the plugin contributes no skills. The issue explicitly requests `codex plugin doctor` or `plugin list --verify`. | Compare inventory with the exact versioned cache directory, manifest, declared skills, and dependencies. This is the MVP’s primary regression. |
+| [#34321: `plugin list` says installed/enabled while cache payload or skills are missing](https://github.com/openai/codex/issues/34321) | Config and inventory remain positive while the plugin contributes no skills. The issue explicitly requests a native doctor or `plugin list --verify` command. | Compare inventory with the exact versioned cache directory, manifest, declared skills, and dependencies. This is the MVP’s primary regression. |
 | [#29103: plugins disappear after restart because a built-in marketplace source is not persisted](https://github.com/openai/codex/issues/29103) | UI installation creates cache state without durable marketplace provenance; reconcile later treats the cache as orphaned. | Report installed cache entries with no resolvable configured marketplace and predict that reinstall/update cannot succeed. |
 | [#28924: `INSTALLED_BY_DEFAULT` is surfaced but not enacted](https://github.com/openai/codex/issues/28924) | Marketplace policy is parsed and shown, yet the expected plugin is absent. | Compare marketplace policy with effective installation state and label the mismatch separately from corruption. |
 | [#26451: bundled Computer Use exists in the marketplace but reconcile skips or removes it](https://github.com/openai/codex/issues/26451) | Different reconciliation stages disagree on whether the bundled plugin exists. | Show marketplace presence, selected version, cache presence, and effective enablement in one row. |
@@ -90,16 +90,19 @@ layers:
 - `plugins.skills`: declared skill roots and `SKILL.md` frontmatter are loadable.
 - `plugins.dependencies`: referenced app and MCP configuration files are valid.
 - `plugins.sources`: local sources remain reachable for a reinstall.
+- `plugins.marketplaces`: marketplace roots, source containment, and locally
+  known Git revisions are coherent.
+- `plugins.provenance`: source and cached trees match even without a version bump.
+- `plugins.cache_pointers`: existing `latest` pointers target installed versions.
+- `plugins.sessions`: recently active sessions do not retain missing or
+  superseded cache paths in their injected skill state.
 
 ## Checks justified for the next milestones
 
-1. `plugins.marketplaces`: configured source, checkout revision, freshness, and
-   persistence.
-2. `plugins.provenance`: source-to-cache digest and incomplete-copy detection.
-3. `plugins.registry`: declared skills and dependencies versus loader registry.
-4. `plugins.mcp_runtime`: bounded initialize, readiness, and `tools/list` probes.
-5. `plugins.exposure`: registry capabilities versus a fresh app-server session.
-6. `plugins.auth`: package installation separated from per-dependency auth
+1. `plugins.registry`: declared skills and dependencies versus loader registry.
+2. `plugins.mcp_runtime`: bounded initialize, readiness, and `tools/list` probes.
+3. `plugins.exposure`: registry capabilities versus a fresh app-server session.
+4. `plugins.auth`: package installation separated from per-dependency auth
    readiness.
 
 The first four can be safe, read-only diagnostics. Active session exposure may

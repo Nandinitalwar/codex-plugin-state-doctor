@@ -6,8 +6,8 @@ import { spawnSync } from "node:child_process";
 import { createReport, renderHuman } from "./doctor.js";
 import { runBenchmarkCli } from "./benchmark-cli.js";
 
-const HELP = `Usage: codex-plugin-doctor [options]
-       codex-plugin-doctor benchmark-install PLUGIN@MARKETPLACE [options]
+const HELP = `Usage: pdoctor [options]
+       pdoctor benchmark-install PLUGIN@MARKETPLACE [options]
 
 Read-only integrity diagnostics for installed Codex plugins.
 
@@ -19,6 +19,9 @@ Options:
   --codex-bin PATH   Codex executable (default: codex)
   --plugin ID        Check one exact plugin id, such as gmail@openai-curated
   --list-file PATH   Read saved 'codex plugin list --json' output (for tests)
+  --marketplace-list-file PATH
+                     Read saved marketplace-list JSON output (for tests)
+  --session-hours N  Inspect sessions updated within N hours (default: 24; 0 disables)
   --json             Emit an official codex-doctor-style JSON report
   --summary          Omit details for non-passing checks
   -h, --help         Show this help
@@ -30,6 +33,8 @@ export function parseArgs(argv) {
     codexBin: "codex",
     onlyPlugin: null,
     listFile: null,
+    marketplaceListFile: null,
+    sessionMaxAgeHours: 24,
     json: false,
     summary: false,
     help: false,
@@ -43,7 +48,16 @@ export function parseArgs(argv) {
       options.summary = true;
     } else if (argument === "-h" || argument === "--help") {
       options.help = true;
-    } else if (["--codex-home", "--codex-bin", "--plugin", "--list-file"].includes(argument)) {
+    } else if (
+      [
+        "--codex-home",
+        "--codex-bin",
+        "--plugin",
+        "--list-file",
+        "--marketplace-list-file",
+        "--session-hours",
+      ].includes(argument)
+    ) {
       const value = argv[index + 1];
       if (!value || value.startsWith("--")) {
         throw new Error(`${argument} requires a value`);
@@ -53,6 +67,14 @@ export function parseArgs(argv) {
       if (argument === "--codex-bin") options.codexBin = value;
       if (argument === "--plugin") options.onlyPlugin = value;
       if (argument === "--list-file") options.listFile = value;
+      if (argument === "--marketplace-list-file") options.marketplaceListFile = value;
+      if (argument === "--session-hours") {
+        const hours = Number(value);
+        if (!Number.isFinite(hours) || hours < 0) {
+          throw new Error("--session-hours must be a non-negative number");
+        }
+        options.sessionMaxAgeHours = hours;
+      }
     } else {
       throw new Error(`unknown option: ${argument}`);
     }
@@ -80,6 +102,9 @@ function loadInputs(options) {
   if (options.listFile) {
     return {
       inventory: JSON.parse(readFileSync(options.listFile, "utf8")),
+      marketplaceInventory: options.marketplaceListFile
+        ? JSON.parse(readFileSync(options.marketplaceListFile, "utf8"))
+        : null,
       codexVersion: "fixture",
     };
   }
@@ -87,9 +112,17 @@ function loadInputs(options) {
   const inventory = JSON.parse(
     run(options.codexBin, ["plugin", "list", "--json"], options),
   );
+  let marketplaceInventory = null;
+  try {
+    marketplaceInventory = JSON.parse(
+      run(options.codexBin, ["plugin", "marketplace", "list", "--json"], options),
+    );
+  } catch {
+    // Older plugin-capable Codex builds may not expose marketplace JSON yet.
+  }
   const versionOutput = run(options.codexBin, ["--version"], options).trim();
   const codexVersion = versionOutput.replace(/^codex-cli\s+/, "");
-  return { inventory, codexVersion };
+  return { inventory, marketplaceInventory, codexVersion };
 }
 
 export async function runCli(argv, io = console) {
@@ -106,7 +139,7 @@ export async function runCli(argv, io = console) {
   try {
     inputs = loadInputs(options);
   } catch (error) {
-    io.error(`codex-plugin-doctor: ${error.message}`);
+    io.error(`pdoctor: ${error.message}`);
     return 2;
   }
 
@@ -114,6 +147,7 @@ export async function runCli(argv, io = console) {
     ...inputs,
     codexHome: path.resolve(options.codexHome),
     onlyPlugin: options.onlyPlugin,
+    sessionMaxAgeHours: options.sessionMaxAgeHours,
   });
   if (options.json) {
     io.log(JSON.stringify(report, null, 2));

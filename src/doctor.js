@@ -8,6 +8,13 @@ import {
 } from "node:fs";
 import path from "node:path";
 
+import {
+  inspectCachePointers,
+  inspectMarketplaces,
+  inspectProvenance,
+  inspectSessionReferences,
+} from "./freshness.js";
+
 const STATUS_RANK = Object.freeze({ ok: 0, warning: 1, fail: 2 });
 const PATH_FIELDS = Object.freeze([
   ["apps", "apps"],
@@ -42,7 +49,10 @@ function pluginId(plugin) {
 }
 
 function list(values) {
-  return values.length === 0 ? "none" : values.sort().join(", ");
+  if (values.length === 0) return "none";
+  const sorted = [...values].sort();
+  const shown = sorted.slice(0, 20).join(", ");
+  return sorted.length > 20 ? `${shown}, +${sorted.length - 20} more` : shown;
 }
 
 function displayPath(value, codexHome) {
@@ -211,13 +221,26 @@ function skillFrontmatterErrors(skillPath, pluginRoot) {
 /**
  * Diagnose a `codex plugin list --json` inventory without mutating Codex state.
  */
-export function diagnosePluginInventory({ inventory, codexHome, onlyPlugin = null }) {
+export function diagnosePluginInventory({
+  inventory,
+  codexHome,
+  onlyPlugin = null,
+  marketplaceInventory = null,
+  sessionMaxAgeHours = 24,
+  nowMs = Date.now(),
+}) {
   const startedAt = Date.now();
   const installed = Array.isArray(inventory?.installed) ? inventory.installed : [];
   const available = Array.isArray(inventory?.available) ? inventory.available : [];
   const plugins = onlyPlugin
     ? installed.filter((plugin) => pluginId(plugin) === onlyPlugin)
     : installed;
+  const pluginStates = plugins
+    .map((plugin) => ({
+      plugin,
+      payloadPath: expectedPayloadPath(codexHome, plugin),
+    }))
+    .filter(({ payloadPath }) => payloadPath !== null);
 
   const payloadMissing = [];
   const payloadInvalid = [];
@@ -365,7 +388,7 @@ export function diagnosePluginInventory({ inventory, codexHome, onlyPlugin = nul
       selected: String(plugins.length),
     },
     inventoryStatus === "fail"
-      ? `Install ${onlyPlugin}, then rerun the doctor.`
+      ? `Install ${onlyPlugin}, then rerun pdoctor.`
       : null,
   );
 
@@ -384,7 +407,7 @@ export function diagnosePluginInventory({ inventory, codexHome, onlyPlugin = nul
       "state mismatch": list(stateInvalid),
     },
     payloadFailures.length > 0
-      ? "Reinstall each affected plugin from its configured marketplace, then rerun the doctor."
+      ? "Reinstall each affected plugin from its configured marketplace, then rerun pdoctor."
       : null,
   );
 
@@ -459,6 +482,109 @@ export function diagnosePluginInventory({ inventory, codexHome, onlyPlugin = nul
       : null,
   );
 
+  const marketplaceState = inspectMarketplaces({
+    pluginStates,
+    marketplaceInventory,
+  });
+  const marketplaceFailures = [
+    ...marketplaceState.missing,
+    ...marketplaceState.mismatched,
+    ...marketplaceState.stale,
+  ];
+  const marketplaceCheck = check(
+    "plugins.marketplaces",
+    "plugins",
+    marketplaceFailures.length > 0 ? "fail" : "ok",
+    marketplaceFailures.length > 0
+      ? `${marketplaceFailures.length} marketplace provenance issue${marketplaceFailures.length === 1 ? "" : "s"}`
+      : "marketplace roots and locally known revisions are coherent",
+    {
+      checked: String(marketplaceState.checked),
+      missing: list(marketplaceState.missing),
+      mismatched: list(marketplaceState.mismatched),
+      stale: list(marketplaceState.stale),
+      revisions: list(marketplaceState.revisions),
+    },
+    marketplaceFailures.length > 0
+      ? "Restore the marketplace root or run `codex plugin marketplace upgrade <name>`, then reinstall affected plugins."
+      : null,
+  );
+
+  const provenance = inspectProvenance(pluginStates);
+  const provenanceStatus =
+    provenance.drift.length > 0
+      ? "fail"
+      : provenance.unverified.length > 0
+        ? "warning"
+        : "ok";
+  const provenanceCheck = check(
+    "plugins.provenance",
+    "plugins",
+    provenanceStatus,
+    provenance.drift.length > 0
+      ? `${provenance.drift.length} cached payload${provenance.drift.length === 1 ? " differs" : "s differ"} from its source`
+      : provenance.unverified.length > 0
+        ? `${provenance.unverified.length} payload comparison${provenance.unverified.length === 1 ? " was" : "s were"} incomplete`
+        : "source and cached payload contents match",
+    {
+      checked: String(provenance.checked),
+      drift: list(provenance.drift),
+      unverified: list(provenance.unverified),
+    },
+    provenanceStatus !== "ok"
+      ? "Reinstall each drifted plugin from its current marketplace source; do not reuse the same-version cache."
+      : null,
+  );
+
+  const pointers = inspectCachePointers(pluginStates);
+  const pointerCheck = check(
+    "plugins.cache_pointers",
+    "plugins",
+    pointers.stale.length > 0 ? "fail" : "ok",
+    pointers.stale.length > 0
+      ? `${pointers.stale.length} stale cache pointer${pointers.stale.length === 1 ? "" : "s"}`
+      : "cache latest pointers target installed versions",
+    {
+      checked: String(pointers.checked),
+      stale: list(pointers.stale),
+    },
+    pointers.stale.length > 0
+      ? "Reinstall the affected plugin so Codex atomically recreates its cache pointer."
+      : null,
+  );
+
+  const sessions = inspectSessionReferences({
+    pluginStates,
+    codexHome,
+    sessionMaxAgeHours,
+    nowMs,
+  });
+  const sessionStatus =
+    sessions.stale.length > 0
+      ? "fail"
+      : sessions.unverified.length > 0
+        ? "warning"
+        : "ok";
+  const sessionCheck = check(
+    "plugins.sessions",
+    "plugins",
+    sessionStatus,
+    sessions.stale.length > 0
+      ? `${sessions.stale.length} stale plugin reference${sessions.stale.length === 1 ? "" : "s"} in recent sessions`
+      : sessions.unverified.length > 0
+        ? `${sessions.unverified.length} recent session${sessions.unverified.length === 1 ? " was" : "s were"} not fully inspected`
+        : "recent sessions do not reference missing or superseded plugin payloads",
+    {
+      "sessions checked": String(sessions.scannedSessions),
+      "bytes checked": String(sessions.scannedBytes),
+      stale: list(sessions.stale),
+      unverified: list(sessions.unverified),
+    },
+    sessionStatus !== "ok"
+      ? "Start a new Codex session. If it still receives stale plugin paths, fully restart Codex before removing old cache versions."
+      : null,
+  );
+
   const checks = Object.fromEntries(
     [
       inventoryCheck,
@@ -467,6 +593,10 @@ export function diagnosePluginInventory({ inventory, codexHome, onlyPlugin = nul
       skillCheck,
       dependencyCheck,
       sourceCheck,
+      marketplaceCheck,
+      provenanceCheck,
+      pointerCheck,
+      sessionCheck,
     ].map((item) => [item.id, item]),
   );
 
@@ -477,8 +607,23 @@ export function diagnosePluginInventory({ inventory, codexHome, onlyPlugin = nul
   };
 }
 
-export function createReport({ inventory, codexHome, codexVersion, onlyPlugin = null }) {
-  const diagnostics = diagnosePluginInventory({ inventory, codexHome, onlyPlugin });
+export function createReport({
+  inventory,
+  codexHome,
+  codexVersion,
+  onlyPlugin = null,
+  marketplaceInventory = null,
+  sessionMaxAgeHours = 24,
+  nowMs = Date.now(),
+}) {
+  const diagnostics = diagnosePluginInventory({
+    inventory,
+    codexHome,
+    onlyPlugin,
+    marketplaceInventory,
+    sessionMaxAgeHours,
+    nowMs,
+  });
   return {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
@@ -490,7 +635,7 @@ export function createReport({ inventory, codexHome, codexVersion, onlyPlugin = 
 
 export function renderHuman(report, { summary = false } = {}) {
   const symbols = { ok: "PASS", warning: "WARN", fail: "FAIL" };
-  const lines = ["Codex Plugin Doctor", `Overall: ${report.overallStatus.toUpperCase()}`, ""];
+  const lines = ["pdoctor", `Overall: ${report.overallStatus.toUpperCase()}`, ""];
 
   for (const item of Object.values(report.checks)) {
     lines.push(`[${symbols[item.status]}] ${item.id}: ${item.summary}`);

@@ -34,6 +34,8 @@ function captureIo() {
 test("argument parser requires option values", () => {
   assert.throws(() => parseArgs(["--plugin"]), /requires a value/);
   assert.throws(() => parseArgs(["--unknown"]), /unknown option/);
+  assert.throws(() => parseArgs(["--session-hours", "-1"]), /non-negative/);
+  assert.equal(parseArgs(["--session-hours", "6"]).sessionMaxAgeHours, 6);
 });
 
 test("CLI emits JSON and exits zero for a healthy fixture", async (t) => {

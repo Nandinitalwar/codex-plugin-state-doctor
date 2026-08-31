@@ -35,8 +35,131 @@ test("healthy installed plugin passes all integrity checks", (t) => {
   assert.equal(result.overallStatus, "ok");
   assert.deepEqual(
     Object.values(result.checks).map((item) => item.status),
-    ["ok", "ok", "ok", "ok", "ok", "ok"],
+    ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
   );
+});
+
+test("same-version source changes are detected as stale cached payloads", (t) => {
+  const { codexHome, sourcePath, plugin } = fixture(t);
+  writeHealthyPayload(codexHome, plugin);
+  writeFileSync(
+    path.join(sourcePath, "skills", "health-check", "SKILL.md"),
+    "---\nname: health-check\ndescription: Updated without a version bump.\n---\n",
+  );
+
+  const result = diagnosePluginInventory({
+    inventory: { installed: [plugin], available: [] },
+    codexHome,
+  });
+
+  assert.equal(result.checks["plugins.provenance"].status, "fail");
+  assert.match(result.checks["plugins.provenance"].details.drift, /SKILL\.md/);
+});
+
+test("missing marketplace roots are reported separately from plugin cache state", (t) => {
+  const { root, codexHome, plugin } = fixture(t);
+  writeHealthyPayload(codexHome, plugin);
+
+  const result = diagnosePluginInventory({
+    inventory: { installed: [plugin], available: [] },
+    marketplaceInventory: {
+      marketplaces: [
+        { name: plugin.marketplaceName, root: path.join(root, "missing-marketplace") },
+      ],
+    },
+    codexHome,
+  });
+
+  assert.equal(result.checks["plugins.marketplaces"].status, "fail");
+  assert.match(result.checks["plugins.marketplaces"].details.missing, /fixture/);
+});
+
+test("latest cache pointers must resolve to the installed version", (t) => {
+  const { codexHome, plugin } = fixture(t);
+  const payloadRoot = writeHealthyPayload(codexHome, plugin);
+  const pluginCacheRoot = path.dirname(payloadRoot);
+  mkdirSync(path.join(pluginCacheRoot, "0.0.9"), { recursive: true });
+  symlinkSync("0.0.9", path.join(pluginCacheRoot, "latest"));
+
+  const result = diagnosePluginInventory({
+    inventory: { installed: [plugin], available: [] },
+    codexHome,
+  });
+
+  assert.equal(result.checks["plugins.cache_pointers"].status, "fail");
+  assert.match(result.checks["plugins.cache_pointers"].details.stale, /0\.0\.9/);
+});
+
+test("recent sessions fail when injected skills reference superseded cache versions", (t) => {
+  const { codexHome, plugin } = fixture(t);
+  writeHealthyPayload(codexHome, plugin);
+  const obsoleteRoot = path.join(
+    codexHome,
+    "plugins",
+    "cache",
+    plugin.marketplaceName,
+    plugin.name,
+    "0.0.9",
+  );
+  mkdirSync(path.join(obsoleteRoot, "skills", "health-check"), { recursive: true });
+  const sessionsRoot = path.join(codexHome, "sessions", "2026", "08", "31");
+  mkdirSync(sessionsRoot, { recursive: true });
+  const sessionPath = path.join(sessionsRoot, "rollout-stale.jsonl");
+  writeFileSync(
+    sessionPath,
+    `${JSON.stringify({
+      type: "world_state",
+      payload: {
+        state: {
+          host_skills: {
+            body: `skill location: ${path.join(obsoleteRoot, "skills", "health-check", "SKILL.md")}`,
+          },
+        },
+      },
+    })}\n`,
+  );
+
+  const result = diagnosePluginInventory({
+    inventory: { installed: [plugin], available: [] },
+    codexHome,
+    nowMs: Date.now(),
+  });
+
+  assert.equal(result.checks["plugins.sessions"].status, "fail");
+  assert.match(result.checks["plugins.sessions"].details.stale, /installed version is 0\.1\.0/);
+});
+
+test("ordinary conversation text containing an old cache path is ignored", (t) => {
+  const { codexHome, plugin } = fixture(t);
+  writeHealthyPayload(codexHome, plugin);
+  const sessionsRoot = path.join(codexHome, "sessions");
+  mkdirSync(sessionsRoot, { recursive: true });
+  writeFileSync(
+    path.join(sessionsRoot, "rollout-message-only.jsonl"),
+    `${JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "user",
+        content: path.join(
+          codexHome,
+          "plugins",
+          "cache",
+          plugin.marketplaceName,
+          plugin.name,
+          "0.0.9",
+          "SKILL.md",
+        ),
+      },
+    })}\n`,
+  );
+
+  const result = diagnosePluginInventory({
+    inventory: { installed: [plugin], available: [] },
+    codexHome,
+  });
+
+  assert.equal(result.checks["plugins.sessions"].status, "ok");
 });
 
 test("enabled plugin with a missing materialized payload fails", (t) => {

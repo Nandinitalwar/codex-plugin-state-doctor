@@ -1,10 +1,11 @@
 {
-  "name": "codex-plugin-state-doctor",
-  "version": "0.2.0",
+  "name": "pdoctor",
+  "version": "0.3.0",
   "description": "Integrity diagnostics and isolated install benchmarks for Codex plugins",
   "type": "module",
   "bin": {
-    "codex-plugin-doctor": "./bin/codex-plugin-doctor.js"
+    "pdoctor": "./bin/pdoctor.js",
+    "codex-plugin-doctor": "./bin/pdoctor.js"
   },
   "files": [
     "bin/",
@@ -14,7 +15,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "doctor": "node ./bin/codex-plugin-doctor.js",
+    "pdoctor": "node ./bin/pdoctor.js",
     "test": "node --test test/unit/*.test.js",
     "test:e2e": "node --test test/e2e/*.test.js",
     "test:all": "npm test && npm run test:e2e"

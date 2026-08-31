@@ -7,7 +7,7 @@ runCli(process.argv.slice(2)).then(
     process.exitCode = exitCode;
   },
   (error) => {
-    console.error(`codex-plugin-doctor: ${error.message}`);
+    console.error(`pdoctor: ${error.message}`);
     process.exitCode = 2;
   },
 );
