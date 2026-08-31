@@ -1,0 +1,26 @@
+{
+  "name": "codex-plugin-state-doctor",
+  "version": "0.1.0",
+  "description": "Read-only integrity diagnostics for installed Codex plugins",
+  "type": "module",
+  "bin": {
+    "codex-plugin-doctor": "./bin/codex-plugin-doctor.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "docs/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "doctor": "node ./bin/codex-plugin-doctor.js",
+    "test": "node --test test/unit/*.test.js",
+    "test:e2e": "node --test test/e2e/*.test.js",
+    "test:all": "npm test && npm run test:e2e"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}
