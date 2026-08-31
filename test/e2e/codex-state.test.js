@@ -12,6 +12,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
+import { runInstallBenchmark } from "../../src/benchmark.js";
 import { createReport } from "../../src/doctor.js";
 
 const codexBin = process.env.CODEX_BIN || "codex";
@@ -157,4 +158,27 @@ test("detects the real Codex enabled-vs-missing-skills regression", (t) => {
     onlyPlugin: installed.pluginId,
   });
   assert.equal(repairedReport.overallStatus, "ok");
+});
+
+test("measures a real Codex plugin installation in an isolated home", (t) => {
+  if (!requireCodex(t)) return;
+
+  const root = mkdtempSync(path.join(os.tmpdir(), "codex-plugin-benchmark-e2e-"));
+  const marketplaceRoot = path.join(root, "marketplace");
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeMarketplace(marketplaceRoot);
+
+  const report = runInstallBenchmark({
+    pluginId: "healthy@doctor-fixture",
+    marketplaceSource: marketplaceRoot,
+    runs: 1,
+    codexBin,
+  });
+
+  assert.equal(report.overallStatus, "ok");
+  assert.equal(report.runsSucceeded, 1);
+  assert.equal(report.results[0].doctorStatus, "ok");
+  assert.ok(report.results[0].installCommandMs >= 0);
+  assert.ok(report.results[0].timeToReadyMs >= report.results[0].installCommandMs);
+  assert.equal(report.temporaryHomesRetained, false);
 });

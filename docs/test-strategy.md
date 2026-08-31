@@ -40,7 +40,19 @@ JSON contract tests pin `schemaVersion`, keyed check IDs, statuses, details,
 remediation, and exit codes. Human-rendering snapshot tests can be added when
 the upstream output style is finalized.
 
-## 5. MCP runtime checks (next milestone)
+## 5. Installation latency benchmark
+
+The benchmark uses a fresh temporary `CODEX_HOME` for every measured run. Unit
+tests inject a deterministic clock and fake Codex process, checking phase
+boundaries, summary statistics, error reporting, cleanup, and exit codes. An
+end-to-end test uses the real Codex CLI and a local marketplace fixture to prove
+that the measured installation is materialized and passes the doctor.
+
+Marketplace setup, installation, and verification are reported separately.
+This prevents Git fetch latency from being mislabeled as plugin installation
+latency while still exposing complete time-to-ready.
+
+## 6. MCP runtime checks (next milestone)
 
 Filesystem integrity does not prove that an MCP server starts. A second
 milestone should use fake stdio servers to test:

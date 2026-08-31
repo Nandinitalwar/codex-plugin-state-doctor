@@ -64,3 +64,12 @@ test("CLI exits one when integrity checks fail", async (t) => {
   const report = JSON.parse(output.logs[0]);
   assert.equal(report.checks["plugins.payloads"].status, "fail");
 });
+
+test("top-level CLI dispatches benchmark help", async () => {
+  const { io, output } = captureIo();
+  const exitCode = await runCli(["benchmark-install", "--help"], io);
+
+  assert.equal(exitCode, 0);
+  assert.equal(output.errors.length, 0);
+  assert.match(output.logs[0], /Measure cold plugin installation latency/);
+});

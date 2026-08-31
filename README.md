@@ -1,8 +1,10 @@
 # Codex Plugin State Doctor
 
-A read-only prototype for the missing plugin integrity checks in `codex doctor`.
-It catches the state mismatch where `codex plugin list` reports a plugin as
-installed and enabled but the materialized payload is absent or unusable.
+A prototype for missing plugin integrity and installation-performance signals
+in Codex. Its doctor catches the state mismatch where `codex plugin list`
+reports a plugin as installed and enabled but the materialized payload is absent
+or unusable. Its benchmark measures cold installation latency without changing
+the user's real Codex state.
 
 This is deliberately a standalone CLI rather than a plugin: a diagnostic tool
 must still work when the plugin loader itself is broken. Its report mirrors the
@@ -17,6 +19,7 @@ DevKit. It does not yet implement the whole plugin lifecycle.
 | DevKit capability | Status | Current scope |
 | --- | --- | --- |
 | `plugin doctor` | Implemented | Reconciles Codex's installed-plugin inventory with cached payloads, manifests, skills, app/MCP configuration files, and local sources. |
+| `benchmark-install` | Implemented | Times marketplace setup, `codex plugin add`, post-install verification, and time-to-ready in a fresh temporary `CODEX_HOME` for every run. |
 | `plugin validate` | Partial | The doctor validates deterministic invariants in an installed cached package. It does not validate an arbitrary source plugin against a complete, versioned publishing schema. |
 | `plugin test` | Partial | The project has unit and real-Codex regression tests, but it does not expose a headless command for testing skill activation, tool selection, UI, authentication, or complete workflows. |
 | `plugin init` | Not implemented | Plugin scaffolding remains outside this project. |
@@ -59,7 +62,7 @@ refresh, OAuth lifecycle, MCP readiness, or runtime tool registration. The full
 failure-by-failure analysis and proposed next checks are in
 [docs/github-issue-evidence.md](docs/github-issue-evidence.md).
 
-## Run it
+## Run the doctor
 
 No package installation or API key is required:
 
@@ -75,6 +78,35 @@ Exit codes follow diagnostic CLI conventions:
 - `1`: at least one integrity check failed
 - `2`: the doctor could not run, parse arguments, or query Codex
 
+## Benchmark installation latency
+
+Pass the exact plugin ID and the local or Git marketplace that contains it:
+
+```sh
+node ./bin/codex-plugin-doctor.js benchmark-install \
+  my-plugin@my-marketplace \
+  --marketplace-source owner/repo \
+  --runs 5
+```
+
+Add `--json` for a machine-readable report. Every run creates a fresh temporary
+`CODEX_HOME`, adds the marketplace, installs the plugin with the real Codex CLI,
+runs `codex plugin list --json`, verifies the installed files with the doctor,
+and removes the temporary home. The user's installed plugins and configuration
+are never changed. `--keep-temp` retains the isolated homes for investigation.
+
+The report separates:
+
+- `marketplaceSetupMs`: marketplace registration or fetch time;
+- `installCommandMs`: wall-clock time for `codex plugin add`;
+- `verificationMs`: inventory lookup and post-install doctor checks;
+- `timeToReadyMs`: install plus successful verification;
+- `totalMs`: marketplace setup through successful verification.
+
+For repeated runs, the report includes minimum, median, p95, maximum, and mean
+for every phase. Marketplace setup is reported separately so network clone time
+does not get mistaken for plugin materialization time.
+
 ## Checks
 
 | Check ID | What it proves |
@@ -86,8 +118,9 @@ Exit codes follow diagnostic CLI conventions:
 | `plugins.dependencies` | Referenced `.app.json` and `.mcp.json` files exist, parse, and have the expected top-level key. |
 | `plugins.sources` | Local sources remain reachable for updates or reinstalls. A missing source is a warning when the cache is healthy. |
 
-The doctor never repairs, removes, installs, starts, or authenticates anything.
-Remediation is reported as text.
+The doctor command never repairs, removes, installs, starts, or authenticates
+anything. The benchmark command performs installation only inside its temporary
+Codex homes. Remediation is reported as text.
 
 ## Test it
 
@@ -97,15 +130,17 @@ npm run test:e2e
 ```
 
 The unit suite constructs isolated filesystem fixtures for healthy and broken
-payloads. The end-to-end regression test creates a temporary `CODEX_HOME`, adds
-a local marketplace through the real Codex CLI, installs a fixture plugin,
-moves its declared `skills/` subtree aside, and proves two things:
+payloads. The end-to-end tests create temporary Codex homes and use the real
+Codex CLI. One installs a fixture plugin, moves its declared `skills/` subtree
+aside, and proves two things:
 
 1. Codex still reports the fixture as installed and enabled.
 2. The plugin doctor reports `plugins.skills` as failed.
 
 The skills subtree is moved back before the temporary test directory is
-removed. The test never reads or modifies the user's real Codex configuration.
+removed. A second test runs the installation benchmark and verifies its timing
+and post-install health report. The tests never read or modify the user's real
+Codex configuration.
 
 ## Upstream path
 

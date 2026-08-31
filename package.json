@@ -1,7 +1,7 @@
 {
   "name": "codex-plugin-state-doctor",
-  "version": "0.1.0",
-  "description": "Read-only integrity diagnostics for installed Codex plugins",
+  "version": "0.2.0",
+  "description": "Integrity diagnostics and isolated install benchmarks for Codex plugins",
   "type": "module",
   "bin": {
     "codex-plugin-doctor": "./bin/codex-plugin-doctor.js"

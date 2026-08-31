@@ -4,10 +4,15 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { createReport, renderHuman } from "./doctor.js";
+import { runBenchmarkCli } from "./benchmark-cli.js";
 
 const HELP = `Usage: codex-plugin-doctor [options]
+       codex-plugin-doctor benchmark-install PLUGIN@MARKETPLACE [options]
 
 Read-only integrity diagnostics for installed Codex plugins.
+
+Commands:
+  benchmark-install  Measure cold installation latency in isolated Codex homes
 
 Options:
   --codex-home PATH  Codex state directory (default: CODEX_HOME or ~/.codex)
@@ -88,6 +93,9 @@ function loadInputs(options) {
 }
 
 export async function runCli(argv, io = console) {
+  if (argv[0] === "benchmark-install") {
+    return runBenchmarkCli(argv.slice(1), io);
+  }
   const options = parseArgs(argv);
   if (options.help) {
     io.log(HELP.trimEnd());
